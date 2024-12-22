@@ -1,7 +1,11 @@
 // src/components/CreateScreen.js
 import React, { useState } from "react";
 import { useDispatch } from "react-redux";
-import { addSession } from "../store/scheduleSlice";
+import {
+  useSession,
+  SessionProvider,
+} from "./contextAPI/sessionManagementContext";
+import { addSession } from "./store/scheduleSlice";
 import {
   Dialog,
   DialogTitle,
@@ -16,134 +20,79 @@ import {
   FormControlLabel,
 } from "@mui/material";
 import "../componentcss/CreateScreen.css";
-import {
-  sessionTimes as initialSessionTimes,
-  selectedDaysTrue,
-  daysInWeek,
-} from "./constants";
+import axios from "axios";
+
+import { sessionTimes, selectedDaysTrue, daysInWeek } from "./constants";
 const CreateScreen = () => {
-  const [totalDays, setTotalDays] = useState([]);
-  const [formData, setFormData] = useState({
-    tuitionId: "",
-    tutorName: "",
-    automate: false,
-    totalDays: [],
-    sessionDate: new Date().toISOString().split("T")[0], // Set current date as default
-  });
-  const [selectedDays, setSelectedDays] = useState({});
-  const [sessionTimes, setSessionTimes] = useState(initialSessionTimes);
-  const [commonSession, setCommonSession] = useState({
-    sessionStartTime: "",
-    sessionEndTime: "",
-  });
-  const [errors, setErrors] = useState({});
-  const [useCommonSession, setUseCommonSession] = useState(false);
-  const dispatch = useDispatch();
+  return (
+    <SessionProvider>
+      <CreateNewScreen />
+    </SessionProvider>
+  );
+};
+const CreateNewScreen = () => {
+  const { state, dispatch } = useSession();
+  const reduxDispatch = useDispatch();
+
   const toggleDaySelection = (day) => {
-    setSelectedDays((prev) => {
-      const newState = { ...prev };
-      if (newState[day]) {
-        delete newState[day];
-        setSessionTimes((prevTimes) => ({ ...prevTimes, [day]: {} }));
-      } else {
-        newState[day] = true;
-      }
-      return newState;
-    });
+    dispatch({ type: "TOGGLE_DAY", payload: day });
   };
+
   const handleSessionChange = (day, field, value) => {
-    setSessionTimes((prevTimes) => {
-      const updatedTimes = {
-        ...prevTimes,
-        [day]: { ...prevTimes[day], [field]: value },
-      };
-      const startTime = updatedTimes[day].sessionStartTime;
-      const endTime = updatedTimes[day].sessionEndTime;
-      if (startTime && endTime && endTime < startTime) {
-        setErrors((prevErrors) => ({
-          ...prevErrors,
-          [day]: `End time must be greater than start time`,
-        }));
-      } else {
-        setErrors((prevErrors) => ({
-          ...prevErrors,
-          [day]: "",
-        }));
-      }
-      return updatedTimes;
+    dispatch({
+      type: "UPDATE_SESSION_TIME",
+      payload: { day, field, value },
     });
   };
   const handleSave = () => {
-    const result = Object.keys(selectedDays).map((day) => ({
-      day,
-      sessionStartTime: useCommonSession
-        ? commonSession.sessionStartTime
-        : sessionTimes[day]?.sessionStartTime || "",
-      sessionEndTime: useCommonSession
-        ? commonSession.sessionEndTime
-        : sessionTimes[day]?.sessionEndTime || "",
-    }));
-    console.log("Saved Data:", result);
-    setTotalDays(result);
-    setFormData({
-      ...formData,
-      totalDays: totalDays,
-    });
-    console.log("totalDays:", totalDays);
+    dispatch({ type: "SAVE_DAYS" });
   };
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === "checkbox" ? checked : value,
+    dispatch({
+      type: "UPDATE_FORM",
+      payload: { name, value, type, checked },
     });
   };
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    dispatch(addSession(formData));
-    console.log("Saved Data formData:", formData);
-    setFormData({
-      tuitionId: "",
-      tutorName: "",
-      automate: false,
-      totalDays: [],
-      sessionDate: new Date().toISOString().split("T")[0],
-    });
-    setSessionTimes({});
-    setSelectedDays({});
-    setCommonSession({});
-    setUseCommonSession(false);
-  };
-  const handleCheckboxChange = (checked) => {
-    setUseCommonSession(checked);
-    if (checked) {
-      setSelectedDays(selectedDaysTrue); // Select both days when common session is enabled
+    try {
+      const response = await fetch("/api/schedules", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(state.formData),
+      });
+      if (!response.ok) {
+        console.error(response);
+        throw new Error("Network response was not ok");
+      }
+      const data = await response.json();
+      console.log("Server Response", data);
+      reduxDispatch(addSession(state.formData));
+      console.log("Form Data", state.formData);
+      dispatch({ type: "RESET_FORM" });
+    } catch (error) {
+      console.error("Error:", error);
     }
   };
-  const handleCommonSession = (field) => (e) => {
-    const value = e.target.value;
-    setCommonSession((prev) => {
-      const updatedSession = { ...prev, [field]: value };
-      if (field === "sessionEndTime" && updatedSession.sessionStartTime) {
-        if (updatedSession.sessionStartTime >= value) {
-          setErrors((prevErrors) => ({
-            ...prevErrors,
-            sessionEndTime: "End time must be greater than start time.",
-          }));
-        } else {
-          setErrors((prevErrors) => {
-            const { sessionEndTime, ...rest } = prevErrors;
-            return rest;
-          });
-        }
-      }
-      return updatedSession;
+
+  const handleCheckboxChange = (checked) => {
+    dispatch({
+      type: "TOGGLE_COMMON_SESSION",
+      payload: { checked, selectedDaysTrue },
     });
   };
-  const [open, setOpen] = useState(false);
-  const handleOpen = () => setOpen(true);
-  const handleClose = () => setOpen(false);
-  console.log("formData", formData);
+  const handleCommonSession = (field) => (e) => {
+    dispatch({
+      type: "UPDATE_COMMON_SESSION",
+      payload: { field, value: e.target.value },
+    });
+  };
+  const handleOpen = () => dispatch({ type: "TOGGLE_MODAL", payload: true });
+  const handleClose = () => dispatch({ type: "TOGGLE_MODAL", payload: false });
+  console.log("fromsession", sessionTimes);
   return (
     <div>
       <Box className="schedule-main">
@@ -157,7 +106,7 @@ const CreateScreen = () => {
               <TextField
                 label="Tuition ID"
                 name="tuitionId"
-                value={formData.tuitionId}
+                value={state.formData.tuitionId}
                 onChange={handleChange}
                 fullWidth
                 required
@@ -168,7 +117,7 @@ const CreateScreen = () => {
               <TextField
                 label="Tutor Name"
                 name="tutorName"
-                value={formData.tutorName}
+                value={state.formData.tutorName}
                 onChange={handleChange}
                 fullWidth
                 required
@@ -179,7 +128,7 @@ const CreateScreen = () => {
                 type="date"
                 label="Session Date"
                 name="sessionDate"
-                value={formData.sessionDate}
+                value={state.formData.sessionDate}
                 onChange={handleChange}
                 fullWidth
                 required
@@ -188,7 +137,6 @@ const CreateScreen = () => {
             {/* Automate Checkbox */}
 
             <Grid item xs={12} sm={6}>
-              {/* Button to open the dialog */}
               <Button variant="outlined" onClick={handleOpen}>
                 Select Days
               </Button>
@@ -198,7 +146,7 @@ const CreateScreen = () => {
                 control={
                   <Checkbox
                     name="automate"
-                    checked={formData.automate}
+                    checked={state.formData.automate}
                     onChange={handleChange}
                   />
                 }
@@ -217,7 +165,7 @@ const CreateScreen = () => {
               </Button>
             </Grid>
           </Grid>
-          <Dialog open={open} onClose={handleClose}>
+          <Dialog open={state.open} onClose={handleClose}>
             <DialogTitle>Select Days</DialogTitle>
             <DialogContent>
               <div className="days-grid-main">
@@ -232,10 +180,10 @@ const CreateScreen = () => {
                         lineHeight: "50px",
                         textAlign: "center",
                         border: "1px solid black",
-                        backgroundColor: selectedDays[day]
+                        backgroundColor: state.selectedDays[day]
                           ? "green"
                           : "transparent",
-                        color: selectedDays[day] ? "white" : "black",
+                        color: state.selectedDays[day] ? "white" : "black",
                         cursor: "pointer",
                       }}
                     >
@@ -246,13 +194,13 @@ const CreateScreen = () => {
                 <FormControlLabel
                   control={
                     <Checkbox
-                      checked={useCommonSession}
+                      checked={state.useCommonSession}
                       onChange={(e) => handleCheckboxChange(e.target.checked)}
                     />
                   }
                   label="Use Common Session"
                 />
-                {useCommonSession ? (
+                {state.useCommonSession ? (
                   <div>
                     <Box component="div" className="common-session">
                       <label>
@@ -260,7 +208,7 @@ const CreateScreen = () => {
                           fullWidth
                           type="time"
                           label=" CommonStartTime"
-                          value={commonSession.sessionStartTime}
+                          value={state.commonSession.sessionStartTime}
                           onChange={handleCommonSession("sessionStartTime")}
                           InputLabelProps={{
                             shrink: true,
@@ -272,13 +220,13 @@ const CreateScreen = () => {
                           fullWidth
                           label=" Common End Time"
                           type="time"
-                          value={commonSession.sessionEndTime}
+                          value={state.commonSession.sessionEndTime}
                           onChange={handleCommonSession("sessionEndTime")}
                           InputLabelProps={{
                             shrink: true,
                           }}
-                          error={!!errors.sessionEndTime}
-                          helperText={errors.sessionEndTime}
+                          error={!!state.errors.sessionEndTime}
+                          helperText={state.errors.sessionEndTime}
                         />
                       </label>
                     </Box>
@@ -287,7 +235,7 @@ const CreateScreen = () => {
                   <div>
                     {daysInWeek.map(
                       (day) =>
-                        selectedDays[day] && (
+                        state.selectedDays[day] && (
                           <div key={day}>
                             <h4>{day.toUpperCase()} Session Times</h4>
                             <Box component="div" className="session-time">
@@ -296,7 +244,8 @@ const CreateScreen = () => {
                                   label="Start Time"
                                   type="time"
                                   value={
-                                    sessionTimes[day]?.sessionStartTime || ""
+                                    state.sessionTimes[day]?.sessionStartTime ||
+                                    ""
                                   }
                                   onChange={(e) =>
                                     handleSessionChange(
@@ -315,7 +264,8 @@ const CreateScreen = () => {
                                   label="End Time"
                                   type="time"
                                   value={
-                                    sessionTimes[day]?.sessionEndTime || ""
+                                    state.sessionTimes[day]?.sessionEndTime ||
+                                    ""
                                   }
                                   onChange={(e) =>
                                     handleSessionChange(
@@ -327,8 +277,8 @@ const CreateScreen = () => {
                                   InputLabelProps={{
                                     shrink: true,
                                   }}
-                                  error={!!errors[day]}
-                                  helperText={errors[day]}
+                                  error={!!state.errors[day]}
+                                  helperText={state.errors[day]}
                                 />
                               </label>
                             </Box>
@@ -351,5 +301,4 @@ const CreateScreen = () => {
     </div>
   );
 };
-
 export default CreateScreen;

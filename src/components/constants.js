@@ -18,3 +18,12 @@ export const selectedDaysTrue = {
   sat: true,
 };
 export const daysInWeek=["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+export const dayNamesMap = {
+  sun: "Sunday",
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+};
